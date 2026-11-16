@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<order xmlns="urn:acme:orders" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <orderId>42</orderId>
+  <status>in-progress</status>
+  <placedAt>2026-01-02T03:04:05.123Z</placedAt>
+  <paid>true</paid>
+  <total>19.95</total>
+  <line><sku>A1</sku><qty>2</qty><price currency="USD">5.00</price></line>
+  <line><sku>B2</sku><qty>1</qty><price currency="EUR">9.95</price></line>
+  <tags>1 2 3</tags>
+  <checksum>DEADBEEF</checksum>
+  <blob>3q2+7w==</blob>
+  <weight>1.5</weight>
+  <ship>2026-01-05</ship>
+  <discount xsi:nil="true"/>
+  <customer id="C7"><name>Ada</name><email>ada@example.com</email></customer>
+  <meta><key>channel</key><value>web</value></meta>
+  <meta><key>region</key><value>eu</value></meta>
+  <refs><ref>r1</ref><ref>r2</ref></refs>
+  <note>leave at door</note>
+</order>

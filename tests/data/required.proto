@@ -1,0 +1,14 @@
+syntax = "proto2";
+
+package req;
+
+message Line {
+  required string sku = 1;
+  optional uint32 qty = 2;
+  required string gift_wrap = 3;
+}
+
+message Order {
+  required int64 order_id = 1;
+  repeated Line line = 2;
+}

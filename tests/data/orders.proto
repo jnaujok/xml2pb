@@ -1,0 +1,57 @@
+// Hand-written subset of orders.xsd (fields renamed/retyped where useful).
+syntax = "proto3";
+
+package acme.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+enum Status {
+  STATUS_UNSPECIFIED = 0;
+  STATUS_NEW = 1;
+  STATUS_IN_PROGRESS = 2;
+  STATUS_DONE = 3;
+}
+
+message Money {
+  string currency = 1;
+  double value = 2;
+}
+
+message Line {
+  string sku = 1;
+  uint32 qty = 2;
+  Money price = 3;
+}
+
+message Customer {
+  string id = 1;
+  string name = 2;
+}
+
+message Refs {
+  repeated string ref = 1;
+}
+
+message Order {
+  int64 order_id = 1;
+  Status status = 2;
+  google.protobuf.Timestamp placed_at = 3;
+  bool paid = 4;
+  string total = 5;
+  repeated Line line = 6;
+  repeated int32 tags = 7;
+  bytes checksum = 8;
+  bytes blob = 9;
+  float weight = 10;
+  string ship = 11;
+  google.protobuf.DoubleValue discount = 12;
+  Customer customer = 13;
+  map<string, string> meta = 14;
+  Refs refs = 15;
+  int32 version = 16;
+}
+
+message Ping {
+  string value = 1;
+}

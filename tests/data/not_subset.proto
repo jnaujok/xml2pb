@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package bad;
+
+message Order {
+  int64 order_id = 1;
+  string no_such_field = 2;
+  repeated Line line = 3;
+}
+
+message Line {
+  string sku = 1;
+  string colour = 2;
+}

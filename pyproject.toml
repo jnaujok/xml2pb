@@ -1,0 +1,71 @@
+[project]
+name = "xml2pb"
+version = "1.0.0"
+description = "Convert XSD-described XML documents to protobuf messages, and generate .proto files from XSDs."
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.10,<4.0"
+keywords = ["protobuf", "protocol-buffers", "xml", "xsd", "xml-schema", "converter", "codegen"]
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Operating System :: OS Independent",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: Text Processing :: Markup :: XML",
+    "Topic :: Utilities",
+    "Typing :: Typed",
+]
+dependencies = [
+    "xmlschema>=3.0",
+    "protobuf>=4.25",
+    "grpcio-tools>=1.62",
+]
+
+[project.urls]
+Repository = "https://github.com/jnaujok/xml2pb"
+
+[project.scripts]
+xml2pb = "xml2pb.cli:main"
+
+[tool.poetry]
+packages = [{ include = "xml2pb", from = "src" }]
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=8.0"
+pytest-cov = ">=5.0"
+ruff = ">=0.6"
+pyright = ">=1.1.400"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+
+[tool.coverage.run]
+source = ["xml2pb"]
+branch = true
+omit = ["*/xml2pb/__main__.py"]  # exercised via subprocess in tests
+
+[tool.coverage.report]
+show_missing = true
+exclude_also = ["if TYPE_CHECKING:"]
+
+[tool.pyright]
+include = ["src", "tests"]
+pythonVersion = "3.10"
+typeCheckingMode = "standard"
+venvPath = "."
+venv = ".venv"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
