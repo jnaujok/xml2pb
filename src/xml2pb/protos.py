@@ -147,6 +147,46 @@ def pick_message(
     )
 
 
+def find_envelope_field(envelope, root_name: str, inner=None):
+    """The field of ``envelope`` that should hold the converted root element.
+
+    Tried in order: a message field named like ``root_name`` (ignoring case and
+    separators, JSON name included), then a message field whose *type* is named
+    like ``root_name``. With ``inner`` (an explicit ``--message``), only fields of
+    that type are considered, and a single such field is used whatever its name.
+    Map fields are never candidates.
+    """
+    cands = [f for f in envelope.fields if f.message_type is not None and not is_map(f)]
+    if inner is not None:
+        cands = [f for f in cands if f.message_type.full_name == inner.full_name]
+    want = norm(root_name)
+    by_name = [f for f in cands if want in (norm(f.name), norm(f.json_name))]
+    if by_name:
+        return by_name[0]  # field names are unique after protoc's own checks
+    by_type = [f for f in cands if norm(f.message_type.name) == want]
+    if len(by_type) == 1:
+        return by_type[0]
+    if inner is not None and len(cands) == 1:
+        return cands[0]
+    if len(by_type) > 1 or (inner is not None and cands):
+        hits = by_type if len(by_type) > 1 else cands
+        raise ConversionError(
+            f"Envelope {envelope.full_name} has several fields that could hold "
+            f"<{root_name}>: {', '.join(f.name for f in hits)}; rename one to match "
+            "the root element"
+        )
+    fields = [
+        f"{f.name} ({f.message_type.full_name})"
+        for f in envelope.fields
+        if f.message_type is not None and not is_map(f)
+    ]
+    what = f"of type {inner.full_name} " if inner is not None else ""
+    raise ConversionError(
+        f"Envelope {envelope.full_name} has no message field {what}for root element "
+        f"<{root_name}>. Message fields: {', '.join(fields) or '(none)'}"
+    )
+
+
 # --------------------------------------------------------------------------- checks
 
 

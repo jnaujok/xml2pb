@@ -114,6 +114,9 @@ jobs:
           # generate a .proto from the XSD, then convert XML with it (strict subset check)
           /tmp/smoke/bin/xml2pb orders.xsd -e order --package smoke.v1 -o /tmp/gen.proto
           /tmp/smoke/bin/xml2pb orders.xsd /tmp/gen.proto order.xml --strict -o /tmp/order.pb
+          # same, wrapped in a generated envelope message
+          /tmp/smoke/bin/xml2pb orders.xsd -e order,ping -E Envelope -o /tmp/env.proto
+          /tmp/smoke/bin/xml2pb orders.xsd /tmp/env.proto order.xml -E Envelope --strict -f text -o - | grep -q '^order {'
           /tmp/smoke/bin/xml2pb orders.xsd orders.proto order.xml -f text -o - | tee /tmp/order.txtpb
           grep -q 'status: STATUS_IN_PROGRESS' /tmp/order.txtpb
           test -s /tmp/order.pb

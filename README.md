@@ -70,6 +70,7 @@ wrote orders.proto
 - [Installation](#installation)
 - [Converting XML](#converting-xml)
 - [Generating a .proto from an XSD](#generating-a-proto-from-an-xsd)
+- [Envelope messages](#envelope-messages)
 - [How XML maps onto protobuf](#how-xml-maps-onto-protobuf)
 - [Python API](#python-api)
 - [Development](#development)
@@ -107,8 +108,8 @@ You can also run it as a module: `python -m xml2pb ...`.
 ## Converting XML
 
 ```text
-xml2pb XSD PROTO XML [-o OUT] [-f binary|text] [-m MESSAGE] [-I DIR ...]
-                     [--no-validate] [--strict] [-v]
+xml2pb XSD PROTO XML [-o OUT] [-f binary|text] [-m MESSAGE] [-E ENVELOPE]
+                     [-I DIR ...] [--no-validate] [--strict] [-v]
 ```
 
 | Option | Description |
@@ -119,6 +120,7 @@ xml2pb XSD PROTO XML [-o OUT] [-f binary|text] [-m MESSAGE] [-I DIR ...]
 | `-o, --output FILE` | Output file. `-` writes to stdout. Default: the XML path with `.pb`, or `.txtpb` for text. |
 | `-f, --format` | `binary` (default, deterministic wire format) or `text` (protobuf text format). |
 | `-m, --message NAME` | The root message. Default: the top-level message named like the root element, or the only top-level message if there is just one. Accepts `acme.v1.Order`, `.acme.v1.Order`, `v1.Order` or just `Order`, plus nested names such as `Order.Line` and types from imported files. An ambiguous short name is an error that lists the candidates. |
+| `-E, --envelope NAME` | Wrap the result in this enclosing message. The root element fills the envelope field that matches it. See [Envelope messages](#envelope-messages). |
 | `-I, --include DIR` | Extra import path for the `.proto`. Repeatable. The `.proto`'s own directory and the well-known types are always available. |
 | `--no-validate` | Don't stop on XSD validation errors; print them as warnings and convert what decodes. |
 | `--strict` | Treat proto fields with no XSD counterpart as an error instead of a warning. |
@@ -132,6 +134,7 @@ xml2pb orders.xsd orders.proto order.xml -f text          # -> order.txtpb
 xml2pb orders.xsd orders.proto order.xml -m Order -o -    # binary to stdout
 curl -s https://example.com/order.xml | xml2pb orders.xsd orders.proto - -f text -o -
 xml2pb schemas/orders.xsd protos/orders.proto order.xml -I third_party/protos
+xml2pb orders.xsd envelope.proto order.xml --envelope Envelope   # Envelope{order: ...}
 ```
 
 ### What gets reported
@@ -152,8 +155,9 @@ Exit codes: `0` success, `1` conversion error, `2` invalid command-line usage.
 Pass only the XSD, plus `--elements`:
 
 ```text
-xml2pb XSD --elements a,b,c [-o OUT] [--package PKG] [--decimal double|string]
-                            [--datetime timestamp|string] [--no-optional]
+xml2pb XSD --elements a,b,c [-o OUT] [--package PKG] [--envelope NAME]
+                            [--decimal double|string] [--datetime timestamp|string]
+                            [--no-optional]
 ```
 
 | Option | Description |
@@ -161,6 +165,7 @@ xml2pb XSD --elements a,b,c [-o OUT] [--package PKG] [--decimal double|string]
 | `-e, --elements` | Comma-separated top-level elements to generate. Repeatable. Each becomes a message named after it, so `purchase-order` becomes `PurchaseOrder`. |
 | `-o, --output` | Output file. `-` writes to stdout. Default: the XSD path with `.proto`. |
 | `--package` | `package` line for the generated file. |
+| `-E, --envelope NAME` | Also generate an enclosing message `NAME` with a `oneof` holding one field per element. See [Envelope messages](#envelope-messages). |
 | `--decimal` | `double` (default) or `string`. `string` keeps `xs:decimal` values exact. |
 | `--datetime` | `timestamp` (default, `google.protobuf.Timestamp`) or `string`. |
 | `--no-optional` | Don't mark singular scalar fields `optional`. By default they are, so that "absent" stays distinct from `0` or `""`. |
@@ -190,6 +195,79 @@ regenerating can renumber fields.
 The output is designed to feed straight back into the converter. Running
 `xml2pb x.xsd gen.proto doc.xml --strict` with a generated `gen.proto` reports
 no gaps. You can then trim the generated file down to the fields you need.
+
+## Envelope messages
+
+Some `.proto` files wrap their payload messages in an *envelope*: a message
+whose fields hold the real messages. Often every message is declared at top
+level:
+
+```protobuf
+message Order { ... }
+message Ping { ... }
+
+message Envelope {
+  string trace_id = 1;
+  oneof body {
+    Order order = 2;
+    Ping ping = 3;
+  }
+}
+```
+
+An XML document's root is `<order>` or `<ping>`, not `<envelope>`, so by
+default xml2pb produces a bare `Order` or `Ping`. Use `--envelope` to get the
+enclosing message instead:
+
+```console
+$ xml2pb orders.xsd envelope.proto order.xml --envelope Envelope -f text -o -
+order {
+  order_id: 42
+  ...
+}
+```
+
+The root element is converted exactly as without `--envelope`, then placed in
+the envelope field chosen like this:
+
+1. A message field named like the root element (`<order>` goes to `order`),
+   ignoring case and separators. The JSON name counts too.
+2. Otherwise, the one message field whose **type** is named like the root
+   element (`<order>` goes to `Order payload = 1;`).
+3. With `-m` as well, only fields of that inner type are considered, and if
+   there is just one, it is used whatever its name.
+
+A `repeated` envelope field gets the document as its single entry. Map and
+scalar fields are never candidates. If no field fits, or several do, the error
+lists the envelope's message fields. The envelope's other fields stay unset,
+and proto2 `required` fields on the envelope are still checked. Skipped-node
+and subset-check paths start with the envelope, for example
+`Envelope/order/note`.
+
+`--envelope NAME` accepts the same name forms as `-m`: `env.v1.Envelope`,
+`Envelope`, and so on.
+
+### Generating an envelope
+
+When generating, `--envelope NAME` adds the enclosing message, first in the
+file, with one field per generated element inside a `oneof`:
+
+```console
+$ xml2pb orders.xsd -e order,ping --envelope Envelope -o envelope.proto
+$ grep -A6 "message Envelope" envelope.proto
+message Envelope {
+  oneof payload {
+    Order order = 1;
+    Ping ping = 2;
+  }
+}
+```
+
+Field names are the snake_case element names, so the generated file works
+with `--envelope` for conversion straight away. The name must be a valid proto
+identifier and must not clash with a generated message. Nested types that
+would have taken the name are renamed around it. The `oneof` is called
+`payload`, or `payload2` and so on if an element is itself named `payload`.
 
 ## How XML maps onto protobuf
 
@@ -241,6 +319,7 @@ result = xml2pb.convert(
     "orders.proto",
     "order.xml",  # or bytes, or a binary file object
     message="Order",  # optional; same lookup rules as -m
+    envelope=None,  # or "Envelope": wrap the result in that enclosing message
     includes=["third_party/protos"],
     validate=True,  # False: tolerate validation errors (see result.validation_errors)
     strict=False,  # True: proto fields missing from the XSD raise
@@ -259,19 +338,21 @@ proto_text = xml2pb.generate_proto(
     decimal="string",  # or "double"
     datetime_mode="timestamp",  # or "string"
     use_optional=True,
+    envelope="Envelope",  # optional enclosing message with a oneof of the elements
     warn=print,  # receives non-fatal warnings; default prints to stderr
 )
 ```
 
 | Name | Purpose |
 | --- | --- |
-| `convert(xsd, proto, xml, *, message, includes, validate, strict)` | Full conversion. Returns a `Conversion`. |
+| `convert(xsd, proto, xml, *, message, envelope, includes, validate, strict)` | Full conversion. Returns a `Conversion`. |
 | `Conversion` | Holds `.message`, `.skipped`, `.subset_issues` and `.validation_errors`, plus `.serialize(fmt)`. |
-| `generate_proto(xsd, elements, package, decimal, datetime_mode, use_optional, warn)` | Generates `.proto` source text. |
+| `generate_proto(xsd, elements, package, decimal, datetime_mode, use_optional, warn, envelope)` | Generates `.proto` source text. |
 | `ProtoGenerator(schema, ...)` | The generator, for an already-loaded `xmlschema` schema (for example an `XMLSchema11`). |
 | `load_proto(proto, includes)` | Compiles a `.proto` into a private descriptor pool. Returns `(pool, file_descriptor, file_names)`. |
 | `find_message(pool, file_desc, name, file_names)` / `pick_message(...)` | Message lookup, using the same rules as the CLI. |
 | `message_class(pool, desc)` | Builds a message class from a descriptor. |
+| `protos.find_envelope_field(envelope, root_name, inner=None)` | The envelope field the root element goes into, using the rules above. |
 | `load_schema(xsd)` / `load_xml(xml)` | Load inputs, turning failures into `ConversionError`. |
 | `serialize(msg, fmt)` | `"binary"` (deterministic) or `"text"` (UTF-8). |
 | `parse_datetime(value)` | `xs:dateTime`/`xs:date` to `(seconds, nanos)`. |
@@ -322,6 +403,8 @@ The test suite covers:
 - lists against repeated elements, maps, nil handling, wildcards and
   repeating groups
 - every generator construct and option, plus generate-then-convert round trips
+- envelopes: field choice by name, by type and with `-m`, repeated fields,
+  ambiguity and error cases, generated envelopes and their round trip
 - the CLI end to end: file, stdout and stdin I/O, error exits, overwrite
   protection and `python -m xml2pb`
 

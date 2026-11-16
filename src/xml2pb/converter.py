@@ -16,7 +16,15 @@ from google.protobuf.message import Message
 
 from .errors import ConversionError
 from .names import local, norm
-from .protos import find_missing_required, is_map, is_repeated, load_proto, message_class
+from .protos import (
+    find_envelope_field,
+    find_message,
+    find_missing_required,
+    is_map,
+    is_repeated,
+    load_proto,
+    message_class,
+)
 from .protos import pick_message as _pick_message
 from .values import set_timestamp, to_scalar
 
@@ -302,6 +310,7 @@ def convert(
     xml: XmlSource,
     *,
     message: str | None = None,
+    envelope: str | None = None,
     includes: Iterable[str | Path] = (),
     validate: bool = True,
     strict: bool = False,
@@ -310,6 +319,10 @@ def convert(
 
     1. Compile ``proto``; load ``xsd``; parse ``xml``.
     2. Pick the message (``message``, else the one named like the root element).
+       With ``envelope``, the result is that enclosing message instead, with the
+       root element converted into the envelope field that matches it (see
+       :func:`xml2pb.protos.find_envelope_field`); ``message`` then optionally
+       names the inner type.
     3. Check that every proto field exists in the XSD (``strict`` makes gaps fatal).
     4. Validate and type-decode the XML (``validate=False`` tolerates errors).
     5. Copy matching values into the message; XML content without a proto field
@@ -320,13 +333,23 @@ def convert(
     resource = load_xml(xml)
 
     root_tag = str(resource.root.tag)
-    desc = _pick_message(pool, file_desc, local(root_tag), message, names)
+    root_name = local(root_tag)
+    env_desc = env_field = None
+    if envelope:
+        env_desc = find_message(pool, file_desc, envelope, names)
+        inner = find_message(pool, file_desc, message, names) if message else None
+        env_field = find_envelope_field(env_desc, root_name, inner)
+        desc = env_field.message_type
+        label = f"{env_desc.name}.{env_field.name}"
+    else:
+        desc = _pick_message(pool, file_desc, root_name, message, names)
+        label = desc.name
 
     xel = find_root_element(schema, root_tag)
     if xel is None:
-        raise ConversionError(f"Root element <{local(root_tag)}> is not declared in the XSD")
+        raise ConversionError(f"Root element <{root_name}> is not declared in the XSD")
     issues: list[str] = []
-    check_subset(desc, xel, desc.name, issues, set())
+    check_subset(desc, xel, label, issues, set())
     if issues and strict:
         raise ConversionError("Proto is not a subset of the XSD:\n  " + "\n  ".join(issues))
 
@@ -341,9 +364,16 @@ def convert(
     except xmlschema.XMLSchemaValidationError as e:
         raise ConversionError(f"XML is not valid against the XSD:\n{e}") from None
 
-    msg: Any = message_class(pool, desc)()
     ctx = FillContext()
-    fill(msg, data, desc.name, ctx, xel.type)
+    if env_desc is not None and env_field is not None:
+        msg: Any = message_class(pool, env_desc)()
+        holder = getattr(msg, env_field.name)
+        target = holder.add() if is_repeated(env_field) else holder
+        target.SetInParent()
+        fill(target, data, label.replace(".", "/"), ctx, xel.type)
+    else:
+        msg = message_class(pool, desc)()
+        fill(msg, data, label, ctx, xel.type)
 
     missing = find_missing_required(msg)  # proto2 'required' fields
     if missing:

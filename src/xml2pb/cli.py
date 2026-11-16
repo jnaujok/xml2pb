@@ -17,10 +17,12 @@ convert (XSD + .proto + XML -> protobuf):
   xml2pb schema.xsd messages.proto input.xml -f text -o out.txtpb
   xml2pb schema.xsd messages.proto input.xml -m Order -I protos/
   cat input.xml | xml2pb schema.xsd messages.proto - -f text -o -
+  xml2pb schema.xsd messages.proto input.xml --envelope Envelope   # root goes in Envelope
 
 generate (XSD -> .proto; pass only the XSD):
   xml2pb schema.xsd --elements order -o messages.proto
   xml2pb schema.xsd -e order,invoice --package acme.v1 --decimal string -o -
+  xml2pb schema.xsd -e order,invoice --envelope Envelope -o messages.proto
 """
 
 
@@ -50,6 +52,14 @@ def build_parser() -> argparse.ArgumentParser:
         "-m",
         "--message",
         help="root message, e.g. acme.v1.Order or just Order (default: match the root element)",
+    )
+    ap.add_argument(
+        "-E",
+        "--envelope",
+        metavar="NAME",
+        help="convert: wrap the result in this enclosing message (the root element fills "
+        "the envelope field that matches it). generate: also emit an enclosing message "
+        "of this name holding one of the generated messages",
     )
     conv.add_argument(
         "-I", "--include", action="append", default=[], help="extra proto import path (repeatable)"
@@ -109,7 +119,15 @@ def _generate(ap: argparse.ArgumentParser, a: argparse.Namespace) -> int:
     names = [n.strip() for chunk in a.elements for n in chunk.split(",") if n.strip()]
     if not names:
         ap.error("--elements needs at least one element name")
-    text = generate_proto(a.xsd, names, a.package, a.decimal, a.datetime_mode, not a.no_optional)
+    text = generate_proto(
+        a.xsd,
+        names,
+        a.package,
+        a.decimal,
+        a.datetime_mode,
+        not a.no_optional,
+        envelope=a.envelope,
+    )
     dest = a.output or str(Path(a.xsd).with_suffix(".proto"))
     if dest != "-" and Path(dest).resolve() == Path(a.xsd).resolve():
         raise ConversionError("output would overwrite the XSD; use -o")
@@ -130,6 +148,7 @@ def _convert(ap: argparse.ArgumentParser, a: argparse.Namespace) -> int:
         a.proto,
         xml,
         message=a.message,
+        envelope=a.envelope,
         includes=a.include,
         validate=not a.no_validate,
         strict=a.strict,

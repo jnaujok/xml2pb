@@ -1,0 +1,38 @@
+// Envelope messages around the top-level messages of orders.proto.
+syntax = "proto3";
+
+package env.v1;
+
+import "orders.proto";
+
+// Matched by field name: <order> -> order, <ping> -> ping.
+message Envelope {
+  string trace_id = 1;
+  oneof body {
+    acme.v1.Order order = 2;
+    acme.v1.Ping ping = 3;
+  }
+}
+
+// Matched by field type: <order> -> payload (type Order).
+message ByType {
+  acme.v1.Order payload = 1;
+  acme.v1.Ping other = 2;
+}
+
+// Repeated envelope field: the document becomes one entry.
+message Batch {
+  repeated acme.v1.Order orders = 1;
+}
+
+// Two fields of the root's type, neither named like it: ambiguous.
+message TwoOrders {
+  acme.v1.Order first = 1;
+  acme.v1.Order second = 2;
+}
+
+// No usable field: maps and scalars are never envelope fields.
+message NoMatch {
+  map<string, acme.v1.Order> by_id = 1;
+  string order = 2;
+}
